@@ -42,7 +42,7 @@ The project adheres to **Clean Architecture** principles, ensuring a separation 
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/christopherjneelankavil/file_manager.git
    ```
 2. Navigate to the project directory:
    ```bash
