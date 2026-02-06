@@ -130,12 +130,52 @@ class _UsbBrowserScreenState extends ConsumerState<UsbBrowserScreen> {
             ],
           ],
         ),
-        floatingActionButton: state.isSelectionMode
+
+        bottomSheet: state.isCopying ? _buildCopyProgressIndicator(state) : null,
+        floatingActionButton: state.isSelectionMode && !state.isCopying
             ? FloatingActionButton(
-                onPressed: () => _copyFiles(controller),
+                onPressed: controller.copySelectedFiles,
                 child: const Icon(Icons.download),
               )
             : null,
+      ),
+    );
+  }
+
+  Widget _buildCopyProgressIndicator(UsbState state) {
+    final progress = state.copyTotalFiles > 0
+        ? state.copyDoneCount / state.copyTotalFiles
+        : 0.0;
+    final percentage = (progress * 100).toInt();
+    
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Copying file ${state.copyDoneCount + 1} of ${state.copyTotalFiles}...",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text("$percentage%"),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (state.copyCurrentFilename != null)
+            Text(
+              state.copyCurrentFilename!,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(value: progress),
+        ],
       ),
     );
   }
@@ -199,37 +239,6 @@ class _UsbBrowserScreenState extends ConsumerState<UsbBrowserScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Future<void> _copyFiles(UsbController controller) async {
-    // Show Progress Dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-               CircularProgressIndicator(),
-               SizedBox(height: 16),
-               Text("Copying files..."),
-            ],
-          ),
-        );
-      },
-    );
-
-    // Copy Action
-    final successCount = await controller.copySelectedFiles();
-
-    if (!mounted) return;
-    Navigator.of(context).pop(); // Close dialog
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Copy Complete: $successCount files copied.")),
     );
   }
 }

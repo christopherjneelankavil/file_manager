@@ -32,6 +32,10 @@ class UsbState extends Equatable {
   final bool isFilteredMode;
   final DateTime? startDate;
   final DateTime? endDate;
+  final bool isCopying;
+  final int copyTotalFiles;
+  final int copyDoneCount;
+  final String? copyCurrentFilename;
 
   const UsbState({
     this.status = UsbStatus.initial,
@@ -45,6 +49,10 @@ class UsbState extends Equatable {
     this.isFilteredMode = false,
     this.startDate,
     this.endDate,
+    this.isCopying = false,
+    this.copyTotalFiles = 0,
+    this.copyDoneCount = 0,
+    this.copyCurrentFilename,
   });
 
   UsbState copyWith({
@@ -59,10 +67,14 @@ class UsbState extends Equatable {
     bool? isFilteredMode,
     DateTime? startDate,
     DateTime? endDate,
+    bool? isCopying,
+    int? copyTotalFiles,
+    int? copyDoneCount,
+    String? copyCurrentFilename,
   }) {
     return UsbState(
       status: status ?? this.status,
-      errorMessage: errorMessage, // Reset error on state change usually, or kept if needed. Passed null clears it? Let's assume passed value.
+      errorMessage: errorMessage,
       rootUri: rootUri ?? this.rootUri,
       currentUri: currentUri ?? this.currentUri,
       uriStack: uriStack ?? this.uriStack,
@@ -72,6 +84,10 @@ class UsbState extends Equatable {
       isFilteredMode: isFilteredMode ?? this.isFilteredMode,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
+      isCopying: isCopying ?? this.isCopying,
+      copyTotalFiles: copyTotalFiles ?? this.copyTotalFiles,
+      copyDoneCount: copyDoneCount ?? this.copyDoneCount,
+      copyCurrentFilename: copyCurrentFilename ?? this.copyCurrentFilename,
     );
   }
 
@@ -88,6 +104,10 @@ class UsbState extends Equatable {
         isFilteredMode,
         startDate,
         endDate,
+        isCopying,
+        copyTotalFiles,
+        copyDoneCount,
+        copyCurrentFilename,
       ];
 }
 
@@ -206,23 +226,52 @@ class UsbController extends StateNotifier<UsbState> {
     state = state.copyWith(selectedFiles: {}, isSelectionMode: false);
   }
 
-  Future<int> copySelectedFiles() async {
+  Future<void> copySelectedFiles() async {
+    if (state.selectedFiles.isEmpty) return;
+
     final destUriEither = await pickDirectoryUseCase(NoParams());
     
-    return destUriEither.fold(
-      (failure) => 0, // Handle error or cancel
+    destUriEither.fold(
+      (failure) => null, // Handle error or cancel
       (destUri) async {
-        if (destUri == null) return 0;
+        if (destUri == null) return;
+        
+        final total = state.selectedFiles.length;
+        state = state.copyWith(
+          isCopying: true,
+          copyTotalFiles: total,
+          copyDoneCount: 0,
+        );
         
         int successCount = 0;
-        for (final file in state.selectedFiles) {
+        final filesToCopy = state.selectedFiles.toList();
+
+        // Copy logic is inherently async but currently sequential to update UI.
+        // For distinct parallel behavior without blocking UI thread, Future is enough if IO is async.
+        // SafDatasource use Platform Channel which is async.
+        
+        for (final file in filesToCopy) {
+          state = state.copyWith(copyCurrentFilename: file.name);
+          
           final result = await copyFileUseCase(CopyFileParams(sourceUri: file.uri, destFolderUri: destUri));
+          
           if (result.fold((l) => false, (r) => r)) {
             successCount++;
           }
+
+          state = state.copyWith(copyDoneCount: state.copyDoneCount + 1);
         }
-        clearSelection();
-        return successCount;
+
+        // Completion
+        state = state.copyWith(
+          isCopying: false,
+          copyTotalFiles: 0,
+          copyDoneCount: 0,
+          copyCurrentFilename: null,
+          isSelectionMode: false,
+          selectedFiles: {},
+          errorMessage: "Download completed successfully: $successCount / $total files.",
+        );
       }
     );
   }
