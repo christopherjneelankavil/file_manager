@@ -39,4 +39,18 @@ class UsbService {
       return [];
     }
   }
+  /// Copies a file from [sourceUri] to [destFolderUri].
+  /// Returns true if successful.
+  Future<bool> copyFile(String sourceUri, String destFolderUri) async {
+    try {
+      final bool? success = await _channel.invokeMethod('copyFile', {
+        'sourceUri': sourceUri,
+        'destFolderUri': destFolderUri,
+      });
+      return success ?? false;
+    } catch (e) {
+      print("Failed to copy file: '$e'.");
+      return false;
+    }
+  }
 }

@@ -41,6 +41,10 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
   List<FileModel> _files = [];
   bool _isLoading = false;
   bool _isFilteredMode = false;
+  
+  // Selection Mode State
+  final Set<FileModel> _selectedFiles = {};
+  bool get _isSelectionMode => _selectedFiles.isNotEmpty;
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -121,7 +125,42 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
     });
   }
 
+  void _toggleSelection(FileModel file) {
+    setState(() {
+      if (_selectedFiles.contains(file)) {
+        _selectedFiles.remove(file);
+      } else {
+        _selectedFiles.add(file);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      // Only select files, not directories, if that's the desired behavior.
+      // But typically "Select All" selects everything visible.
+      // For copy, we might only want files or folders too?
+      // Native copy implementation currently handles file-to-file copy using streams.
+      // Copying a folder would require recursion which native side doesn't do yet.
+      // So let's only select files for now to avoid issues.
+      _selectedFiles.addAll(_files.where((f) => !f.isDirectory));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedFiles.clear();
+    });
+  }
+
   void _onFolderTap(FileModel folder) {
+    if (_isSelectionMode) {
+      // In selection mode, tapping a folder could select it?
+      // Or just ignore/toggle if we supported folder selection.
+      // For now, let's say we don't support folder selection for copy.
+      return; 
+    }
+    
     if (_isFilteredMode) {
       // If in filtered mode, navigation behavior is ambiguous. 
       // Usually "Search Results" are just a flat list. 
@@ -185,9 +224,23 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
       onWillPop: _onWillPop,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('USB File Explorer'),
+          title: _isSelectionMode
+              ? Text('${_selectedFiles.length} Selected')
+              : const Text('USB File Explorer'),
+          leading: _isSelectionMode
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _clearSelection,
+                )
+              : null,
           actions: [
-            if (_rootUri != null)
+            if (_isSelectionMode)
+               IconButton(
+                icon: const Icon(Icons.select_all),
+                onPressed: _selectAll,
+                tooltip: 'Select All Files',
+              ),
+            if (!_isSelectionMode && _rootUri != null)
               IconButton(
                 icon: const Icon(Icons.folder_open),
                 onPressed: _pickDirectory,
@@ -279,6 +332,7 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
                             itemCount: _files.length,
                             itemBuilder: (context, index) {
                               final file = _files[index];
+                              final isSelected = _selectedFiles.contains(file);
                               return ListTile(
                                 leading: Icon(
                                   file.isDirectory ? Icons.folder : Icons.insert_drive_file,
@@ -288,9 +342,26 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
                                 subtitle: Text(
                                   '${_dateFormat.format(DateTime.fromMillisecondsSinceEpoch(file.lastModified))} • ${_formatSize(file.size)}',
                                 ),
-                                onTap: file.isDirectory
-                                    ? () => _onFolderTap(file)
-                                    : null, // Open file logic can be added here if needed
+                                selected: isSelected,
+                                selectedTileColor: Colors.blue.withOpacity(0.1),
+                                trailing: _isSelectionMode && !file.isDirectory
+                                    ? Checkbox(
+                                        value: isSelected,
+                                        onChanged: (val) => _toggleSelection(file),
+                                      )
+                                    : null,
+                                onTap: () {
+                                  if (_isSelectionMode) {
+                                    if (!file.isDirectory) _toggleSelection(file);
+                                  } else if (file.isDirectory) {
+                                    _onFolderTap(file);
+                                  }
+                                },
+                                onLongPress: () {
+                                  if (!file.isDirectory) {
+                                    _toggleSelection(file);
+                                  }
+                                },
                               );
                             },
                           ),
@@ -298,8 +369,65 @@ class _UsbExplorerScreenState extends State<UsbExplorerScreen> {
             ],
           ],
         ),
+        floatingActionButton: _isSelectionMode
+            ? FloatingActionButton(
+                onPressed: _copySelectedFiles,
+                child: const Icon(Icons.download),
+              )
+            : null,
       ),
     );
+  }
+
+  Future<void> _copySelectedFiles() async {
+    // 1. Pick Destination
+    final destUri = await _usbService.pickDirectory();
+    if (destUri == null) return; // User cancelled
+
+    if (!mounted) return;
+
+    // 2. Show Progress Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+               CircularProgressIndicator(),
+               SizedBox(height: 16),
+               Text("Copying files..."),
+            ],
+          ),
+        );
+      },
+    );
+
+    int successCount = 0;
+    int failCount = 0;
+    
+    // 3. Copy Loop
+    for (final file in _selectedFiles) {
+      final success = await _usbService.copyFile(file.uri, destUri);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // Close progress dialog
+
+    // 4. Show Result
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Copy Complete: $successCount success, $failCount failed"),
+      ),
+    );
+    
+    _clearSelection();
   }
 
   String _formatSize(int bytes) {

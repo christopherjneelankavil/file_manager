@@ -42,6 +42,24 @@ class MainActivity : FlutterActivity() {
                         }.start()
                     }
                 }
+                "copyFile" -> {
+                    val sourceUri = call.argument<String>("sourceUri")
+                    val destFolderUri = call.argument<String>("destFolderUri")
+                    if (sourceUri == null || destFolderUri == null) {
+                        result.error("INVALID_ARGS", "Source and Destination URIs are required", null)
+                    } else {
+                        Thread {
+                            val success = copyFile(sourceUri, destFolderUri)
+                            runOnUiThread {
+                                if (success) {
+                                    result.success(true)
+                                } else {
+                                    result.error("COPY_FAILED", "Failed to copy file", null)
+                                }
+                            }
+                        }.start()
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -155,5 +173,35 @@ class MainActivity : FlutterActivity() {
             "size" to file.length(),
             "type" to (file.getType() ?: "application/octet-stream")
         )
+    }
+
+    private fun copyFile(sourceUriString: String, destFolderUriString: String): Boolean {
+        try {
+            val sourceUri = Uri.parse(sourceUriString)
+            val destFolderUri = Uri.parse(destFolderUriString)
+
+            val sourceFile = DocumentFile.fromSingleUri(applicationContext, sourceUri) ?: return false
+            val destFolder = DocumentFile.fromTreeUri(applicationContext, destFolderUri) ?: return false
+
+            if (!sourceFile.exists() || !destFolder.exists()) return false
+
+            val fileName = sourceFile.getName() ?: "copied_file"
+            // Start creating the destination file
+            // Note: createFile might fail if file exists or permissions denied
+            val destFile = destFolder.createFile(sourceFile.getType() ?: "application/octet-stream", fileName) ?: return false
+
+            val inputStream = contentResolver.openInputStream(sourceUri) ?: return false
+            val outputStream = contentResolver.openOutputStream(destFile.getUri()) ?: return false
+
+            inputStream.use { input ->
+                outputStream.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
     }
 }
