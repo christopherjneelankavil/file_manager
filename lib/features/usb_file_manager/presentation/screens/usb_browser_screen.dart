@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/providers/theme_provider.dart';
 import '../providers/usb_provider.dart';
 import '../widgets/file_list_item.dart';
 
@@ -16,6 +17,7 @@ class _UsbBrowserScreenState extends ConsumerState<UsbBrowserScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(usbControllerProvider);
     final controller = ref.read(usbControllerProvider.notifier);
+    final themeMode = ref.watch(themeProvider);
 
     // Error Listener
     ref.listen(usbControllerProvider, (previous, next) {
@@ -47,6 +49,14 @@ class _UsbBrowserScreenState extends ConsumerState<UsbBrowserScreen> {
                    )
                  : null,
           actions: [
+             if (!state.isSelectionMode)
+              IconButton(
+                icon: Icon(themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
+                onPressed: () {
+                  ref.read(themeProvider.notifier).toggleTheme();
+                },
+                tooltip: 'Toggle Theme',
+              ),
             if (state.isSelectionMode)
               IconButton(
                 icon: const Icon(Icons.select_all),
