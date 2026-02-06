@@ -1,28 +1,28 @@
 import 'package:flutter/services.dart';
-import 'file_model.dart'; // Import FileModel
+import '../../../../core/error/failures.dart';
+import '../models/file_model.dart';
 
-class UsbService {
+abstract class SafDatasource {
+  Future<String?> pickDirectory();
+  Future<List<FileModel>> getFiles(String uri, {bool recursive, int? startDate, int? endDate});
+  Future<bool> copyFile(String sourceUri, String destFolderUri);
+}
+
+class SafDatasourceImpl implements SafDatasource {
   static const MethodChannel _channel = MethodChannel('com.example.file_viewer/usb');
 
-  /// Opens the directory picker and returns the URI string.
+  @override
   Future<String?> pickDirectory() async {
     try {
       final String? uri = await _channel.invokeMethod('pickDirectory');
       return uri;
     } on PlatformException catch (e) {
-      print("Failed to pick directory: '${e.message}'.");
-      return null;
+      throw UsbFailure(e.message ?? 'Failed to pick directory');
     }
   }
 
-  /// Lists files from the given URI.
-  /// If [recursive] is true, it scans deep (for search/filtering).
-  /// [startDate] and [endDate] are timestamps in milliseconds.
-  Future<List<FileModel>> getFiles(String uri, {
-    bool recursive = false,
-    int? startDate,
-    int? endDate,
-  }) async {
+  @override
+  Future<List<FileModel>> getFiles(String uri, {bool recursive = false, int? startDate, int? endDate}) async {
     try {
       final List<dynamic>? result = await _channel.invokeMethod('getFiles', {
         'uri': uri,
@@ -33,14 +33,13 @@ class UsbService {
 
       if (result == null) return [];
 
-      return result.map((e) => FileModel.fromMap(e)).toList();
+      return result.map((e) => FileModel.fromMap(e as Map<Object?, Object?>)).toList();
     } on PlatformException catch (e) {
-      print("Failed to get files: '${e.message}'.");
-      return [];
+      throw UsbFailure(e.message ?? 'Failed to get files');
     }
   }
-  /// Copies a file from [sourceUri] to [destFolderUri].
-  /// Returns true if successful.
+
+  @override
   Future<bool> copyFile(String sourceUri, String destFolderUri) async {
     try {
       final bool? success = await _channel.invokeMethod('copyFile', {
@@ -49,8 +48,7 @@ class UsbService {
       });
       return success ?? false;
     } catch (e) {
-      print("Failed to copy file: '$e'.");
-      return false;
+      throw UsbFailure(e.toString());
     }
   }
 }
